@@ -359,6 +359,13 @@ pub fn eip7702_get_code(
         COLD_ADDRESS_ACCESS_COST
     };
 
+    // Record delegation target address as touched in BAL per EIP-7928
+    // When an EIP-7702 delegated account is accessed, both the delegating account
+    // and the delegation target should appear in the BAL
+    if let Some(recorder) = db.bal_recorder.as_mut() {
+        recorder.record_touched_address(auth_address);
+    }
+
     let authorized_bytecode = db.get_account_code(auth_address)?.clone();
 
     Ok((true, access_cost, auth_address, authorized_bytecode))

@@ -504,6 +504,13 @@ impl<'a> VM<'a> {
         if self.is_create()? {
             // Create contract, reverting the Tx if address is already occupied.
             if let Some(context_result) = self.handle_create_transaction()? {
+                // Per EIP-7928: On top-level transaction failure, convert storage writes to reads.
+                // The slots were accessed but the writes didn't persist.
+                if !context_result.is_success() {
+                    if let Some(recorder) = self.db.bal_recorder.as_mut() {
+                        recorder.convert_writes_to_reads_for_tx_failure();
+                    }
+                }
                 let report = self.finalize_execution(context_result)?;
                 return Ok(report);
             }
@@ -511,6 +518,15 @@ impl<'a> VM<'a> {
 
         self.substate.push_backup();
         let context_result = self.run_execution()?;
+
+        // Per EIP-7928: On top-level transaction failure, convert storage writes to reads.
+        // Storage slots that were written to should appear as READS because the writes
+        // didn't actually persist, but the slots WERE accessed.
+        if !context_result.is_success() {
+            if let Some(recorder) = self.db.bal_recorder.as_mut() {
+                recorder.convert_writes_to_reads_for_tx_failure();
+            }
+        }
 
         let report = self.finalize_execution(context_result)?;
 

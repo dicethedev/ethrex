@@ -937,6 +937,48 @@ impl BlockAccessListRecorder {
         // Note: touched_addresses is intentionally NOT restored - per EIP-7928,
         // accessed addresses must be included even from reverted calls
     }
+
+    /// Converts storage writes to storage reads for top-level transaction failures.
+    ///
+    /// Per EIP-7928: When a top-level transaction fails (OOG, REVERT, etc.), the storage
+    /// slots that were written to should appear as READS, not WRITES, because the writes
+    /// didn't actually persist. However, the slots WERE accessed, so they must appear in BAL.
+    ///
+    /// This only converts writes from the current transaction (current_index), preserving
+    /// writes from system contracts (index 0) and previous transactions.
+    ///
+    /// This differs from nested call reverts which use checkpoint/restore:
+    /// - Nested calls: restore to exact state before call (reads snapshot + truncated writes)
+    /// - Top-level failures: convert current tx's writes to reads
+    pub fn convert_writes_to_reads_for_tx_failure(&mut self) {
+        let current_idx = self.current_index;
+
+        // For each storage write from the current transaction, add the slot to storage_reads
+        // and remove that specific write entry
+        for (address, slots) in &mut self.storage_writes {
+            for (slot, changes) in slots.iter_mut() {
+                // Check if any of the changes are from the current transaction
+                let had_current_tx_write = changes.iter().any(|(idx, _)| *idx == current_idx);
+                if had_current_tx_write {
+                    // Add to storage_reads since the slot was accessed
+                    self.storage_reads
+                        .entry(*address)
+                        .or_insert_with(BTreeSet::new)
+                        .insert(*slot);
+
+                    // Remove only the current transaction's write(s) from this slot
+                    changes.retain(|(idx, _)| *idx != current_idx);
+                }
+            }
+        }
+
+        // Clean up empty entries in storage_writes
+        for slots in self.storage_writes.values_mut() {
+            slots.retain(|_, changes| !changes.is_empty());
+        }
+        self.storage_writes
+            .retain(|_, slots| !slots.is_empty());
+    }
 }
 
 #[cfg(test)]
