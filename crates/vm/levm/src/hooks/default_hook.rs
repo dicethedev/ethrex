@@ -550,10 +550,10 @@ pub fn transfer_value(vm: &mut VM<'_>) -> Result<(), VMError> {
 
         vm.increase_account_balance(to, value)?;
 
-        // EIP-7708: Emit transfer log for nonzero-value transactions to DIFFERENT accounts
-        // Self-transfers (origin == to) should NOT emit a log per the EIP spec
+        // EIP-7708: Emit transfer log for nonzero-value transactions
+        // Per EIP-7708, self-transfers (origin == to) also emit a transfer log
         let from = vm.env.origin;
-        if vm.env.config.fork >= Fork::Amsterdam && !value.is_zero() && from != to {
+        if vm.env.config.fork >= Fork::Amsterdam && !value.is_zero() {
             let log = create_eth_transfer_log(from, to, value);
             vm.substate.add_log(log);
         }
