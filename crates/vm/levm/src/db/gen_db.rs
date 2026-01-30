@@ -546,9 +546,12 @@ impl<'a> VM<'a> {
         address: Address,
         new_bytecode: Code,
     ) -> Result<(), InternalError> {
-        // Record code change for BAL
+        // Record code change for BAL only if bytecode is non-empty
+        // Per EIP-7928, empty bytecode does not constitute a code change
         if let Some(recorder) = self.db.bal_recorder.as_mut() {
-            recorder.record_code_change(address, new_bytecode.bytecode.clone());
+            if !new_bytecode.bytecode.is_empty() {
+                recorder.record_code_change(address, new_bytecode.bytecode.clone());
+            }
         }
 
         let acc = self.get_account_mut(address)?;

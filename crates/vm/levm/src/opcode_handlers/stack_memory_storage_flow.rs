@@ -175,10 +175,16 @@ impl<'a> VM<'a> {
 
         // Get current and original (pre-tx) values.
         // Note: access_storage_slot does NOT record to BAL per EIP-7928.
-        // BAL recording must happen AFTER all gas checks pass.
+        // BAL recording for READ happens after implicit SLOAD, WRITE after gas check passes.
         let key = u256_to_h256(storage_slot_key);
         let (current_value, storage_slot_was_cold) = self.access_storage_slot(to, key)?;
         let original_value = self.get_original_storage(to, key)?;
+
+        // Record storage READ to BAL immediately after implicit SLOAD per EIP-7928:
+        // "If SSTORE passes the stipend check and accesses storage (implicit SLOAD), the slot
+        // must appear as a read even if the main gas check fails."
+        // The WRITE will be recorded later only if gas check passes and value changes.
+        self.record_storage_slot_to_bal(to, key);
 
         // Gas Refunds
         // Sync gas refund with global env, ensuring consistency accross contexts.
@@ -222,7 +228,7 @@ impl<'a> VM<'a> {
 
         self.substate.refunded_gas = gas_refunds;
 
-        // Main gas check - if this fails, the slot MUST NOT appear in BAL
+        // Main gas check - if this fails, the slot still appears as a READ but not as a WRITE
         self.current_call_frame
             .increase_consumed_gas(gas_cost::sstore(
                 original_value,
@@ -231,11 +237,8 @@ impl<'a> VM<'a> {
                 storage_slot_was_cold,
             )?)?;
 
-        // Record storage read to BAL AFTER all gas checks pass per EIP-7928:
-        // "If pre-state validation fails, the target is never accessed and must not appear in BAL."
-        // Note: update_account_storage will record the write if value changes.
-        self.record_storage_slot_to_bal(to, key);
-
+        // Note: Storage READ was already recorded above after implicit SLOAD.
+        // update_account_storage will record the WRITE if value changes.
         if new_storage_slot_value != current_value {
             self.update_account_storage(to, key, new_storage_slot_value, current_value)?;
         }

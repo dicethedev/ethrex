@@ -75,17 +75,14 @@ impl LEVM {
         let chain_config = db.store.get_chain_config()?;
         let fork = chain_config.fork(block.header.timestamp);
 
-        // Record coinbase if block has txs or withdrawals (per EIP-7928)
-        if record_bal {
-            let has_txs_or_withdrawals = !block.body.transactions.is_empty()
-                || block
-                    .body
-                    .withdrawals
-                    .as_ref()
-                    .is_some_and(|w| !w.is_empty());
-            if has_txs_or_withdrawals && let Some(recorder) = db.bal_recorder_mut() {
-                recorder.record_touched_address(block.header.coinbase);
-            }
+        // Record coinbase if block has transactions (per EIP-7928)
+        // Coinbase receives transaction fees, so it's only touched when there are actual transactions.
+        // Withdrawals do NOT pay fees to coinbase, so coinbase shouldn't be recorded for withdrawal-only blocks.
+        if record_bal
+            && !block.body.transactions.is_empty()
+            && let Some(recorder) = db.bal_recorder_mut()
+        {
+            recorder.record_touched_address(block.header.coinbase);
         }
 
         let mut receipts = Vec::new();

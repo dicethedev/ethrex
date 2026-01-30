@@ -615,15 +615,15 @@ impl<'a> VM<'a> {
             }
 
             // EIP-7708: Emit appropriate log for ETH movement
+            // Per EIP-7708: Selfdestruct log is emitted when SELFDESTRUCT to self is triggered
             if self.env.config.fork >= Fork::Amsterdam && !balance.is_zero() {
-                if to != beneficiary {
-                    let log = create_eth_transfer_log(to, beneficiary, balance);
-                    self.substate.add_log(log);
-                } else if self.substate.is_account_created(&to) {
-                    // Selfdestruct to self - only log when account is actually being destroyed
-                    let log = create_selfdestruct_log(to, balance);
-                    self.substate.add_log(log);
-                }
+                let log = if to != beneficiary {
+                    create_eth_transfer_log(to, beneficiary, balance)
+                } else {
+                    // Selfdestruct to self - emit Selfdestruct log
+                    create_selfdestruct_log(to, balance)
+                };
+                self.substate.add_log(log);
             }
         } else {
             self.increase_account_balance(beneficiary, balance)?;
@@ -704,11 +704,6 @@ impl<'a> VM<'a> {
         // Add new contract to accessed addresses
         self.substate.add_accessed_address(new_address);
 
-        // Record address touch for BAL (after address is calculated per EIP-7928)
-        if let Some(recorder) = self.db.bal_recorder.as_mut() {
-            recorder.record_touched_address(new_address);
-        }
-
         // Log CREATE in tracer
         let call_type = match salt {
             Some(_) => CallType::CREATE2,
@@ -727,6 +722,8 @@ impl<'a> VM<'a> {
         // 1. Sender doesn't have enough balance to send value.
         // 2. Depth limit has been reached
         // 3. Sender nonce is max.
+        // Per EIP-7928: Contract address should NOT be recorded in BAL if CREATE fails early
+        // (before address is actually accessed/tracked)
         let checks = [
             (deployer_balance < value, "OutOfFund"),
             (new_depth > 1024, "MaxDepth"),
@@ -737,6 +734,12 @@ impl<'a> VM<'a> {
                 self.early_revert_message_call(gas_limit, reason.to_string())?;
                 return Ok(OpcodeResult::Continue);
             }
+        }
+
+        // Record address touch for BAL only after early checks pass per EIP-7928
+        // This ensures the address is not recorded if CREATE fails early (e.g., insufficient balance)
+        if let Some(recorder) = self.db.bal_recorder.as_mut() {
+            recorder.record_touched_address(new_address);
         }
 
         // Increment sender nonce (irreversible change)
@@ -790,6 +793,7 @@ impl<'a> VM<'a> {
         self.substate.add_created_account(new_address); // Mostly for SELFDESTRUCT during initcode.
 
         // EIP-7708: Emit transfer log for nonzero-value CREATE/CREATE2
+        // (EF tests expect this behavior even though the EIP text doesn't explicitly mention CREATE)
         // Must be after push_backup() so the log reverts if the child context reverts
         if self.env.config.fork >= Fork::Amsterdam && !value.is_zero() {
             let log = create_eth_transfer_log(deployer, new_address, value);
@@ -901,8 +905,8 @@ impl<'a> VM<'a> {
             if should_transfer_value && ctx_result.is_success() {
                 self.transfer(msg_sender, to, value)?;
 
-                // EIP-7708: Emit transfer log for nonzero-value CALL/CALLCODE to DIFFERENT accounts
-                // Self-transfers should NOT emit a log per the EIP spec
+                // EIP-7708: Emit transfer log for nonzero-value CALL to DIFFERENT accounts
+                // CALLCODE transfers to self (to == msg_sender), so no log is emitted
                 if self.env.config.fork >= Fork::Amsterdam && !value.is_zero() && msg_sender != to {
                     let log = create_eth_transfer_log(msg_sender, to, value);
                     self.substate.add_log(log);
@@ -948,9 +952,9 @@ impl<'a> VM<'a> {
 
             self.substate.push_backup();
 
-            // EIP-7708: Emit transfer log for nonzero-value CALL/CALLCODE to DIFFERENT accounts
+            // EIP-7708: Emit transfer log for nonzero-value CALL to DIFFERENT accounts
             // Must be after push_backup() so the log reverts if the child context reverts
-            // Self-transfers should NOT emit a log per the EIP spec
+            // CALLCODE transfers to self (to == msg_sender), so no log is emitted
             if should_transfer_value
                 && self.env.config.fork >= Fork::Amsterdam
                 && !value.is_zero()

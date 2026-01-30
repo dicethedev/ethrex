@@ -177,6 +177,43 @@ pub fn validate_block_access_list_hash(
         .unwrap_or(false);
 
     if !valid {
+        // Debug output for BAL mismatch
+        eprintln!("BAL MISMATCH DEBUG:");
+        eprintln!("  Expected hash: {:?}", header.block_access_list_hash);
+        eprintln!("  Computed hash: {:?}", computed_hash);
+        eprintln!("  Num accounts in BAL: {}", computed_bal.accounts().len());
+        for (i, account) in computed_bal.accounts().iter().enumerate() {
+            eprintln!("  Account[{}]: {:?}", i, account.address());
+            eprintln!("    storage_changes: {}", account.storage_changes().len());
+            for sc in account.storage_changes() {
+                eprintln!("      slot {:?}: {} changes", sc.slot(), sc.changes().len());
+                for c in sc.changes() {
+                    eprintln!(
+                        "        idx={}, val={:?}",
+                        c.block_access_index(),
+                        c.post_value()
+                    );
+                }
+            }
+            eprintln!("    storage_reads: {:?}", account.storage_reads());
+            eprintln!("    balance_changes: {}", account.balance_changes().len());
+            for bc in account.balance_changes() {
+                eprintln!(
+                    "      idx={}, bal={:?}",
+                    bc.block_access_index(),
+                    bc.post_balance()
+                );
+            }
+            eprintln!("    nonce_changes: {}", account.nonce_changes().len());
+            for nc in account.nonce_changes() {
+                eprintln!(
+                    "      idx={}, nonce={}",
+                    nc.block_access_index(),
+                    nc.post_nonce()
+                );
+            }
+            eprintln!("    code_changes: {}", account.code_changes().len());
+        }
         return Err(InvalidBlockError::BlockAccessListHashMismatch);
     }
 

@@ -758,49 +758,62 @@ impl BlockAccessListRecorder {
             // Per EIP-7928: "If an account's balance changes during a transaction, but its
             // post-transaction balance is equal to its pre-transaction balance, then the
             // change MUST NOT be recorded."
+            // Also, only record the FINAL balance per transaction, not intermediate values.
             if let Some(changes) = self.balance_changes.get(address) {
-                // Group balance changes by transaction index
-                let mut changes_by_tx: BTreeMap<u16, Vec<U256>> = BTreeMap::new();
+                // Group balance changes by transaction index, keeping only the FINAL balance per tx
+                let mut final_balance_by_tx: BTreeMap<u16, U256> = BTreeMap::new();
                 for (index, post_balance) in changes {
-                    changes_by_tx.entry(*index).or_default().push(*post_balance);
+                    // Later entries overwrite earlier ones, keeping the final balance
+                    final_balance_by_tx.insert(*index, *post_balance);
                 }
 
                 // For each transaction, check if balance round-tripped
                 let mut prev_balance = self.initial_balances.get(address).copied();
-                for (index, tx_changes) in &changes_by_tx {
+                for (index, final_balance) in &final_balance_by_tx {
                     let initial_for_tx = prev_balance;
-                    let final_for_tx = tx_changes.last().copied();
 
                     // Check if this transaction's balance round-tripped
-                    let is_round_trip = match (initial_for_tx, final_for_tx) {
-                        (Some(initial), Some(final_bal)) => initial == final_bal,
-                        _ => false, // Include if we can't determine
+                    let is_round_trip = match initial_for_tx {
+                        Some(initial) => initial == *final_balance,
+                        None => false, // Include if we can't determine initial
                     };
 
-                    // Only include changes if NOT a round-trip within this transaction
+                    // Only include change if NOT a round-trip within this transaction
                     if !is_round_trip {
-                        for post_balance in tx_changes {
-                            account_changes
-                                .add_balance_change(BalanceChange::new(*index, *post_balance));
-                        }
+                        account_changes
+                            .add_balance_change(BalanceChange::new(*index, *final_balance));
                     }
 
                     // Update prev_balance for next transaction
-                    prev_balance = final_for_tx;
+                    prev_balance = Some(*final_balance);
                 }
             }
 
-            // Add nonce changes
+            // Add nonce changes (keeping only final nonce per transaction index)
+            // Per EIP-7928: For each transaction, record only the final post-transaction nonce
             if let Some(changes) = self.nonce_changes.get(address) {
+                // Group by transaction index and keep only the last (final) nonce for each
+                let mut nonce_by_tx: BTreeMap<u16, u64> = BTreeMap::new();
                 for (index, post_nonce) in changes {
-                    account_changes.add_nonce_change(NonceChange::new(*index, *post_nonce));
+                    // Later entries overwrite earlier ones, keeping the final nonce
+                    nonce_by_tx.insert(*index, *post_nonce);
+                }
+                for (index, post_nonce) in nonce_by_tx {
+                    account_changes.add_nonce_change(NonceChange::new(index, post_nonce));
                 }
             }
 
-            // Add code changes
+            // Add code changes (keeping only final code per transaction index)
+            // Per EIP-7928: For each transaction, record only the final post-transaction code
             if let Some(changes) = self.code_changes.get(address) {
+                // Group by transaction index and keep only the last (final) code for each
+                let mut code_by_tx: BTreeMap<u16, &Bytes> = BTreeMap::new();
                 for (index, new_code) in changes {
-                    account_changes.add_code_change(CodeChange::new(*index, new_code.clone()));
+                    // Later entries overwrite earlier ones, keeping the final code
+                    code_by_tx.insert(*index, new_code);
+                }
+                for (index, new_code) in code_by_tx {
+                    account_changes.add_code_change(CodeChange::new(index, new_code.clone()));
                 }
             }
 
