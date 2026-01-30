@@ -162,6 +162,13 @@ impl LEVM {
         // TODO: I don't like deciding the behavior based on the VMType here.
         // TODO2: Revise this, apparently extract_all_requests_levm is not called
         // in L2 execution, but its implementation behaves differently based on this.
+        //
+        // Per EIP-7928: System contract calls for extracting requests (withdrawal, consolidation)
+        // are part of the pre-execution phase (blockAccessIndex 0), not post-execution.
+        // Set BAL index to 0 for these system calls.
+        if record_bal {
+            db.set_bal_index(0);
+        }
         let requests = match vm_type {
             VMType::L1 => extract_all_requests_levm(&receipts, db, &block.header, vm_type)?,
             VMType::L2(_) => Default::default(),

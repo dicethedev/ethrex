@@ -67,17 +67,17 @@ const SKIPPED_AMSTERDAM: &[&str] = &[
     // EIP-7928: Block-Level Access Lists (SFI) - NOT IMPLEMENTED
     // Requires block-level state access tracking that changes gas costs
     // ~250 tests | To test: cargo test eip7928 --profile release-with-debug
-    "eip7928_block_level_access_lists",
+    // "eip7928_block_level_access_lists",
     //
     // EIP-7708: ETH Transfers Emit a Log (CFI) - NOT IMPLEMENTED
     // Requires LOG emission on ETH value transfers
     // ~66 tests | To test: cargo test eip7708 --profile release-with-debug
-    "eip7708_eth_transfer_logs",
+    // "eip7708_eth_transfer_logs",
     //
     // EIP-7778: Block Gas Accounting without Refunds (CFI) - NOT IMPLEMENTED
     // Requires changes to gas refund calculations at block level
     // ~24 tests | To test: cargo test eip7778 --profile release-with-debug
-    "eip7778_block_gas_accounting_without_refunds",
+    // "eip7778_block_gas_accounting_without_refunds",
     //
     // EIP-7843: SLOTNUM Opcode (CFI) - PARTIALLY IMPLEMENTED
     // New opcode returning current slot number
@@ -97,8 +97,8 @@ const SKIPPED_AMSTERDAM: &[&str] = &[
     // Amsterdam EIPs are implemented.
     // ~31,000 tests across berlin, byzantium, cancun, prague, etc.
     // =========================================================================
-    "fork_Amsterdam",
-    "ToAmsterdam",
+    // "fork_Amsterdam",
+    // "ToAmsterdam",
 ];
 
 // Select backend

@@ -142,7 +142,15 @@ impl Hook for DefaultHook {
         let gas_refunded: u64 = compute_gas_refunded(vm, ctx_result)?;
         let gas_spent = compute_actual_gas_used(vm, gas_refunded, gas_used_pre_refund)?;
 
-        refund_sender(vm, ctx_result, gas_refunded, gas_spent, gas_used_pre_refund)?;
+        // EIP-7623/EIP-7778: For Amsterdam+, apply the gas floor to gas_used (block accounting)
+        // The floor is the minimum gas that must be charged based on calldata costs.
+        let gas_used_with_floor = if vm.env.config.fork >= Fork::Amsterdam {
+            gas_used_pre_refund.max(vm.get_min_gas_used()?)
+        } else {
+            gas_used_pre_refund
+        };
+
+        refund_sender(vm, ctx_result, gas_refunded, gas_spent, gas_used_with_floor)?;
 
         pay_coinbase(vm, gas_spent)?;
 
@@ -182,9 +190,9 @@ pub fn refund_sender(
 
     // EIP-7778: Separate block vs user gas accounting for Amsterdam+
     if vm.env.config.fork >= Fork::Amsterdam {
-        // Block accounting uses pre-refund gas
+        // Block accounting uses pre-refund gas (with floor applied)
         ctx_result.gas_used = gas_used_pre_refund;
-        // User pays post-refund gas
+        // User pays post-refund gas (floor already applied in compute_actual_gas_used)
         ctx_result.gas_spent = gas_spent;
     } else {
         // Pre-Amsterdam: both use post-refund value
@@ -246,7 +254,11 @@ pub fn pay_coinbase(vm: &mut VM<'_>, gas_to_pay: u64) -> Result<(), VMError> {
         .checked_mul(priority_fee_per_gas)
         .ok_or(InternalError::Overflow)?;
 
-    vm.increase_account_balance(vm.env.coinbase, coinbase_fee)?;
+    // Skip balance update if fee is zero (e.g., system contract calls)
+    // This prevents coinbase from being recorded in BAL when there's no actual payment
+    if !coinbase_fee.is_zero() {
+        vm.increase_account_balance(vm.env.coinbase, coinbase_fee)?;
+    }
 
     Ok(())
 }
