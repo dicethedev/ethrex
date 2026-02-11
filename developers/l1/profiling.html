@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Smart contracts - Ethrex</title>
+        <title>Profiling - Ethrex</title>
 
 
         <!-- Custom HTML head -->
@@ -237,191 +237,123 @@
 }
 
 </style>
-<h1 id="ethrex-l2-contracts"><a class="header" href="#ethrex-l2-contracts">Ethrex L2 contracts</a></h1>
-<p>There are two L1 contracts: OnChainProposer and CommonBridge. Both contracts are deployed using UUPS proxies, so they are upgradeable.</p>
-<h2 id="l1-contracts"><a class="header" href="#l1-contracts">L1 Contracts</a></h2>
-<h3 id="commonbridge"><a class="header" href="#commonbridge"><code>CommonBridge</code></a></h3>
-<p>The <code>CommonBridge</code> is an upgradeable smart contract that facilitates cross-chain transfers between L1 and L2.</p>
-<h4 id="state-variables"><a class="header" href="#state-variables"><strong>State Variables</strong></a></h4>
+<h1 id="profiling"><a class="header" href="#profiling">Profiling</a></h1>
+<p>This guide covers the profiling tools available for ethrex developers, including CPU profiling and memory profiling.</p>
+<h2 id="cpu-profiling-with-pprof"><a class="header" href="#cpu-profiling-with-pprof">CPU Profiling with <code>pprof</code></a></h2>
+<p>Ethrex includes built-in CPU profiling via <a href="https://github.com/tikv/pprof-rs">pprof-rs</a>, gated behind the <code>cpu_profiling</code> feature flag. When enabled, a profiler starts at boot (1000 Hz sampling) and writes a <code>profile.pb</code> file to the current working directory at shutdown.</p>
+<h3 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h3>
+<p>To view the generated profiles you need one of:</p>
 <ul>
-<li><strong><code>pendingTxHashes</code></strong>: Array storing hashed pending privileged transactions</li>
-<li><strong><code>batchWithdrawalLogsMerkleRoots</code></strong>: Mapping of L2 batch numbers to merkle roots of withdrawal logs</li>
-<li><strong><code>deposits</code></strong>: Tracks how much of each L1 token was deposited for each L2 token (L1 → L2 → amount)</li>
-<li><strong><code>claimedWithdrawalIDs</code></strong>: Tracks which withdrawals have been claimed by message ID</li>
-<li><strong><code>ON_CHAIN_PROPOSER</code></strong>: Address of the contract that can commit and verify batches</li>
-<li><strong><code>L2_BRIDGE_ADDRESS</code></strong>: Constant address (0xffff) representing the L2 bridge</li>
+<li><strong>Go toolchain</strong> (<code>go tool pprof</code>) — the standard pprof viewer</li>
+<li><strong>pprof CLI</strong> — standalone binary from <a href="https://github.com/google/pprof">google/pprof</a></li>
 </ul>
-<h4 id="core-functionality"><a class="header" href="#core-functionality"><strong>Core Functionality</strong></a></h4>
-<ol>
-<li>
-<p><strong>Deposits (L1 → L2)</strong></p>
-<ul>
-<li><strong><code>deposit()</code></strong>: Allows users to deposit ETH to L2</li>
-<li><strong><code>depositERC20()</code></strong>: Allows users to deposit ERC20 tokens to L2</li>
-<li><strong><code>receive()</code></strong>: Fallback function for ETH deposits, forwarding to the sender's address on the L2</li>
-<li><strong><code>sendToL2()</code></strong>: Sends arbitrary data to L2 via privileged transaction</li>
-</ul>
-<p>Internally the deposit functions will use the <code>SendValues</code> struct defined as:</p>
-<pre><code class="language-solidity">struct SendValues {
-    address to; // Target address on L2
-    uint256 gasLimit; // Maximum gas for L2 execution
-    uint256 value; // The value of the transaction
-    bytes data; // Calldata to execute on the target L2 contract
-}
+<p>Install the standalone CLI:</p>
+<pre><code class="language-bash">go install github.com/google/pprof@latest
 </code></pre>
-<p>This expressivity allows for arbitrary cross-chain actions, e.g., depositing ETH then interacting with an L2 contract.</p>
-</li>
-<li>
-<p><strong>Withdrawals (L2 → L1)</strong></p>
-<ul>
-<li><strong><code>claimWithdrawal()</code></strong>: Withdraw ETH from <code>CommonBridge</code> via Merkle proof</li>
-<li><strong><code>claimWithdrawalERC20()</code></strong>: Withdraw ERC20 tokens from <code>CommonBridge</code> via Merkle proof</li>
-<li><strong><code>publishWithdrawals()</code></strong>: Privileged function to add merkle root of L2 withdrawal logs to <code>batchWithdrawalLogsMerkleRoots</code> mapping to make them claimable</li>
-</ul>
-</li>
-<li>
-<p><strong>Transaction Management</strong></p>
-<ul>
-<li><strong><code>getPendingTransactionHashes()</code></strong>: Returns pending privileged transaction hashes</li>
-<li><strong><code>removePendingTransactionHashes()</code></strong>: Removes processed privileged transactions (only callable by OnChainProposer)</li>
-<li><strong><code>getPendingTransactionsVersionedHash()</code></strong>: Returns a versioned hash of the first <code>number</code> of pending privileged transactions</li>
-</ul>
-</li>
-</ol>
-<h3 id="onchainoperator"><a class="header" href="#onchainoperator"><code>OnChainOperator</code></a></h3>
-<p>The <code>OnChainProposer</code> is an upgradeable smart contract that ensures the advancement of the L2. It's used by sequencers to commit batches of L2 blocks and verify their proofs.</p>
-<h4 id="state-variables-1"><a class="header" href="#state-variables-1"><strong>State Variables</strong></a></h4>
-<ul>
-<li><strong><code>batchCommitments</code></strong>: Mapping of batch numbers to submitted <code>BatchCommitmentInfo</code> structs</li>
-<li><strong><code>lastVerifiedBatch</code></strong>: The latest verified batch number (all batches ≤ this are considered verified)</li>
-<li><strong><code>lastCommittedBatch</code></strong>: The latest committed batch number (all batches ≤ this are considered committed)</li>
-<li><strong><code>authorizedSequencerAddresses</code></strong>: Mapping of authorized sequencer addresses that can commit and verify batches</li>
-</ul>
-<h4 id="core-functionality-1"><a class="header" href="#core-functionality-1"><strong>Core Functionality</strong></a></h4>
-<ol>
-<li>
-<p><strong>Batch Commitment</strong></p>
-<ul>
-<li><strong><code>commitBatch()</code></strong>: Commits a batch of L2 blocks by storing its commitment data and publishing withdrawals</li>
-<li><strong><code>revertBatch()</code></strong>: Removes unverified batches (only callable when paused)</li>
-</ul>
-</li>
-<li>
-<p><strong>Proof Verification</strong></p>
-<ul>
-<li><strong><code>verifyBatch()</code></strong>: Verifies a single batch using RISC0, SP1, or TDX proofs</li>
-<li><strong><code>verifyBatchesAligned()</code></strong>: Verifies multiple batches in sequence using aligned proofs with Merkle verification</li>
-</ul>
-</li>
-</ol>
-<h2 id="l2-contracts"><a class="header" href="#l2-contracts">L2 Contracts</a></h2>
-<h3 id="commonbridgel2"><a class="header" href="#commonbridgel2"><code>CommonBridgeL2</code></a></h3>
-<p>The <code>CommonBridgeL2</code> is an L2 smart contract that facilitates cross-chain transfers between L1 and L2.</p>
-<h4 id="state-variables-2"><a class="header" href="#state-variables-2"><strong>State Variables</strong></a></h4>
-<ul>
-<li><strong><code>L1_MESSENGER</code></strong>: Constant address (<code>0x000000000000000000000000000000000000FFFE</code>) representing the L2-to-L1 messenger contract</li>
-<li><strong><code>BURN_ADDRESS</code></strong>: Constant address (<code>0x0000000000000000000000000000000000000000</code>) used to burn ETH during withdrawals</li>
-<li><strong><code>ETH_TOKEN</code></strong>: Constant address (<code>0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE</code>) representing ETH as a token</li>
-</ul>
-<h4 id="core-functionality-2"><a class="header" href="#core-functionality-2"><strong>Core Functionality</strong></a></h4>
-<ol>
-<li>
-<p><strong>ETH Operations</strong></p>
-<ul>
-<li><strong><code>withdraw()</code></strong>: Initiates ETH withdrawal to L1 by burning ETH on L2 and sending a message to L1</li>
-<li><strong><code>mintETH()</code></strong>: Transfers ETH to a recipient (called by privileged L1 bridge transactions). If it fails a withdrawal is queued.</li>
-</ul>
-</li>
-<li>
-<p><strong>ERC20 Token Operations</strong></p>
-<ul>
-<li><strong><code>mintERC20()</code></strong>: Attempts to mint ERC20 tokens on L2 (only callable by the bridge itself via privileged transactions). If it fails a withdrawal is queued.</li>
-<li><strong><code>tryMintERC20()</code></strong>: Internal function that validates token L1 address and performs a cross-chain mint</li>
-<li><strong><code>withdrawERC20()</code></strong>: Initiates ERC20 token withdrawal to L1 by burning tokens on L2 and sending a message to L1</li>
-</ul>
-</li>
-<li>
-<p><strong>Cross-Chain Messaging</strong></p>
-<ul>
-<li><strong><code>_withdraw()</code></strong>: Private function that sends withdrawal messages to L1 via the L2-to-L1 messenger</li>
-<li>Uses keccak256 hashing to encode withdrawal data for L1 processing</li>
-</ul>
-</li>
-<li>
-<p><strong>Access Control</strong></p>
-<ul>
-<li><strong><code>onlySelf</code></strong>: Modifier ensuring only the bridge contract itself can call privileged functions</li>
-<li>Validates that privileged operations (like minting) are only performed by the bridge</li>
-</ul>
-</li>
-</ol>
-<h3 id="messenger"><a class="header" href="#messenger"><code>Messenger</code></a></h3>
-<p>The <code>Messenger</code> is a simple L2 smart contract that enables cross-chain communication. It supports L2 to L1 messaging by emitting <code>L1Message</code> events for sequencers to pick up (currently used exclusively for withdrawals), and L2 to L2 messaging by emitting <code>L2Message</code> events.</p>
-<h4 id="state-variables-3"><a class="header" href="#state-variables-3"><strong>State Variables</strong></a></h4>
-<ul>
-<li><strong><code>lastMessageId</code></strong>: Counter that tracks the ID of the last emitted message (incremented before each message is sent)</li>
-<li><strong><code>BRIDGE</code></strong>: Constant address (<code>0x000000000000000000000000000000000000FFff</code>) representing the <code>CommonBridgeL2</code> contract</li>
-</ul>
-<h4 id="core-functionality-3"><a class="header" href="#core-functionality-3"><strong>Core Functionality</strong></a></h4>
-<ol>
-<li>
-<p><strong>Message Sending</strong></p>
-<ul>
-<li><strong><code>sendMessageToL1()</code></strong>: Sends a message to L1 by emitting an <code>L1Message</code> event with the sender, data, and <code>lastMessageId</code>. Only the <code>CommonBridgeL2</code> contract can call this function.</li>
-<li><strong><code>sendMessageToL2()</code></strong>: Sends a message to another L2 chain by emitting an <code>L2Message</code> event. Only the <code>CommonBridgeL2</code> contract can call this function.</li>
-</ul>
-</li>
-<li>
-<p><strong>Access Control</strong></p>
-<ul>
-<li><strong><code>onlyBridge</code></strong>: Modifier ensuring only the <code>CommonBridgeL2</code> contract can call messaging functions</li>
-</ul>
-</li>
-</ol>
-<h2 id="upgrade-the-contracts"><a class="header" href="#upgrade-the-contracts">Upgrade the contracts</a></h2>
-<p>To upgrade a contract, you have to create the new contract and, as the original one, inherit from OpenZeppelin's <code>UUPSUpgradeable</code>. Make sure to implement the <code>_authorizeUpgrade</code> function and follow the <a href="https://docs.openzeppelin.com/upgrades-plugins/writing-upgradeable">proxy pattern restrictions</a>.</p>
-<p>Once you have the new contract, you need to do the following three steps:</p>
-<ol>
-<li>
-<p>Deploy the new contract</p>
-<pre><code class="language-sh">rex deploy &lt;NEW_IMPLEMENTATION_BYTECODE&gt; 0 &lt;DEPLOYER_PRIVATE_KEY&gt;
-</code></pre>
-</li>
-<li>
-<p>Upgrade the proxy by calling the method <code>upgradeToAndCall(address newImplementation, bytes memory data)</code>. The <code>data</code> parameter is the calldata to call on the new implementation as an initialization, you can pass an empty stream.</p>
-<pre><code class="language-sh">rex send &lt;PROXY_ADDRESS&gt; 'upgradeToAndCall(address,bytes)' &lt;NEW_IMPLEMENTATION_ADDRESS&gt; &lt;INITIALIZATION_CALLDATA&gt; --private-key &lt;PRIVATE_KEY&gt;
-</code></pre>
-</li>
-<li>
-<p>Check the proxy updated the pointed address to the new implementation. It should return the address of the new implementation:</p>
-<pre><code class="language-sh">curl http://localhost:8545 -d '{"jsonrpc": "2.0", "id": "1", "method": "eth_getStorageAt", "params": [&lt;PROXY_ADDRESS&gt;, "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", "latest"]}'
-</code></pre>
-</li>
-</ol>
-<h2 id="transfer-ownership"><a class="header" href="#transfer-ownership">Transfer ownership</a></h2>
-<p>The contracts are <code>Ownable2Step</code>, that means that whenever you want to transfer the ownership, the new owner have to accept it to effectively apply the change. This is an extra step of security, to avoid accidentally transfer ownership to a wrong account. You can make the transfer in these steps:</p>
-<ol>
-<li>
-<p>Start the transfer:</p>
-<pre><code class="language-sh">rex send &lt;PROXY_ADDRESS&gt; 'transferOwnership(address)' &lt;NEW_OWNER_ADDRESS&gt; --private-key &lt;CURRENT_OWNER_PRIVATE_KEY&gt;
-</code></pre>
-</li>
-<li>
-<p>Accept the ownership:</p>
-<pre><code class="language-sh">rex send &lt;PROXY_ADDRESS&gt; 'acceptOwnership()' --private-key &lt;NEW_OWNER_PRIVATE_KEY&gt;
-</code></pre>
-</li>
-</ol>
+<h3 id="building-with-cpu-profiling"><a class="header" href="#building-with-cpu-profiling">Building with CPU profiling</a></h3>
+<pre><code class="language-bash"># Debug build
+cargo build -p ethrex --features cpu_profiling
 
+# Release build (recommended for realistic profiles)
+cargo build -p ethrex --release --features cpu_profiling
+</code></pre>
+<p>The <code>cpu_profiling</code> feature is opt-in (not in <code>default</code>) so normal builds are unaffected.</p>
+<h3 id="collecting-a-profile"><a class="header" href="#collecting-a-profile">Collecting a profile</a></h3>
+<ol>
+<li>
+<p>Start the node as usual:</p>
+<pre><code class="language-bash">./target/release/ethrex --authrpc.jwtsecret ./secrets/jwt.hex --network holesky
+</code></pre>
+<p>You should see this log line near startup:</p>
+<pre><code>CPU profiling enabled (1000 Hz), will write profile.pb at shutdown
+</code></pre>
+</li>
+<li>
+<p>Let the node run through the workload you want to profile.</p>
+</li>
+<li>
+<p>Stop the node with <code>Ctrl+C</code> or <code>SIGTERM</code>. The file <code>profile.pb</code> will be written to the current working directory and the shutdown logs will include:</p>
+<pre><code>CPU profile written to profile.pb
+</code></pre>
+</li>
+</ol>
+<h3 id="analyzing-the-profile"><a class="header" href="#analyzing-the-profile">Analyzing the profile</a></h3>
+<h4 id="interactive-web-ui"><a class="header" href="#interactive-web-ui">Interactive web UI</a></h4>
+<pre><code class="language-bash">go tool pprof -http=:8080 profile.pb
+</code></pre>
+<p>This opens a browser with flame graphs, call graphs, top functions, and source annotations.</p>
+<h4 id="terminal-top-functions"><a class="header" href="#terminal-top-functions">Terminal top functions</a></h4>
+<pre><code class="language-bash">go tool pprof profile.pb
+# then at the (pprof) prompt:
+(pprof) top 20
+(pprof) top 20 -cum
+</code></pre>
+<h4 id="flame-graph-svg"><a class="header" href="#flame-graph-svg">Flame graph (SVG)</a></h4>
+<pre><code class="language-bash">go tool pprof -svg profile.pb &gt; flamegraph.svg
+</code></pre>
+<h4 id="focus-on-a-specific-function"><a class="header" href="#focus-on-a-specific-function">Focus on a specific function</a></h4>
+<pre><code class="language-bash">go tool pprof -http=:8080 -focus=execute_block profile.pb
+</code></pre>
+<h3 id="tips"><a class="header" href="#tips">Tips</a></h3>
+<ul>
+<li><strong>Use release builds</strong> for profiling. Debug builds have very different performance characteristics due to missing optimizations and extra debug assertions.</li>
+<li><strong>Profile with <code>release-with-debug</code></strong> if you want accurate profiles with full symbol names. This gives optimized code with debug symbols:
+<pre><code class="language-bash">cargo build -p ethrex --profile release-with-debug --features cpu_profiling
+</code></pre>
+</li>
+<li><strong>Combine with jemalloc</strong> — the <code>cpu_profiling</code> feature is orthogonal to <code>jemalloc</code> and <code>jemalloc_profiling</code>. You can enable both:
+<pre><code class="language-bash">cargo build -p ethrex --release --features cpu_profiling,jemalloc
+</code></pre>
+</li>
+<li><strong>Sampling rate</strong> — the profiler samples at 1000 Hz (once per millisecond). This is high enough to get good resolution without significant overhead.</li>
+<li><strong>File location</strong> — <code>profile.pb</code> is written to whichever directory you run the binary from. If you want it elsewhere, <code>cd</code> to that directory before starting the node, or move the file after shutdown.</li>
+</ul>
+<h2 id="memory-profiling-with-jemalloc"><a class="header" href="#memory-profiling-with-jemalloc">Memory Profiling with jemalloc</a></h2>
+<p>Ethrex supports memory profiling through jemalloc, gated behind the <code>jemalloc_profiling</code> feature flag. This enables jemalloc's built-in heap profiling (<code>prof:true</code>) and exposes <code>/debug/pprof/allocs</code> and <code>/debug/pprof/allocs/flamegraph</code> RPC endpoints for on-demand heap dumps.</p>
+<h3 id="building-with-memory-profiling"><a class="header" href="#building-with-memory-profiling">Building with memory profiling</a></h3>
+<pre><code class="language-bash">cargo build -p ethrex --release --features jemalloc_profiling
+</code></pre>
+<blockquote>
+<p><strong>Note:</strong> <code>jemalloc_profiling</code> implies the <code>jemalloc</code> feature, so you don't need to specify both.</p>
+</blockquote>
+<h3 id="external-memory-profilers"><a class="header" href="#external-memory-profilers">External memory profilers</a></h3>
+<p>You can also use external tools with the <code>jemalloc</code> feature (without <code>jemalloc_profiling</code>):</p>
+<h4 id="bytehound"><a class="header" href="#bytehound">Bytehound</a></h4>
+<p>Requires <a href="https://github.com/koute/bytehound">Bytehound</a> and jemalloc installed on the system.</p>
+<pre><code class="language-bash">cargo build -p ethrex --release --features jemalloc
+
+export MEMORY_PROFILER_LOG=warn
+LD_PRELOAD=/path/to/libbytehound.so:/path/to/libjemalloc.so ./target/release/ethrex [ARGS]
+</code></pre>
+<h4 id="heaptrack-linux-only"><a class="header" href="#heaptrack-linux-only">Heaptrack (Linux only)</a></h4>
+<p>Requires <a href="https://github.com/KDE/heaptrack">Heaptrack</a> and jemalloc installed on the system.</p>
+<pre><code class="language-bash">cargo build -p ethrex --release --features jemalloc
+
+LD_PRELOAD=/path/to/libjemalloc.so heaptrack ./target/release/ethrex [ARGS]
+heaptrack_print heaptrack.ethrex.&lt;pid&gt;.gz &gt; heaptrack.stacks
+</code></pre>
+<h2 id="profiling-with-samply"><a class="header" href="#profiling-with-samply">Profiling with Samply</a></h2>
+<p><a href="https://github.com/mstange/samply">Samply</a> is a sampling CPU profiler that works on macOS and Linux and produces profiles viewable in the Firefox Profiler.</p>
+<pre><code class="language-bash">cargo build -p ethrex --profile release-with-debug
+samply record ./target/release-with-debug/ethrex [ARGS]
+</code></pre>
+<p>This will open the Firefox Profiler UI in your browser when the process exits.</p>
+<h2 id="feature-flags-summary"><a class="header" href="#feature-flags-summary">Feature flags summary</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Feature</th><th>What it does</th><th>Platform</th></tr></thead><tbody>
+<tr><td><code>cpu_profiling</code></td><td>Built-in pprof CPU profiling, writes <code>profile.pb</code></td><td>Linux/macOS</td></tr>
+<tr><td><code>jemalloc</code></td><td>Use jemalloc allocator (enables external profilers)</td><td>Linux/macOS</td></tr>
+<tr><td><code>jemalloc_profiling</code></td><td>jemalloc heap profiling + RPC endpoint</td><td>Linux/macOS</td></tr>
+</tbody></table>
+</div>
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../../l2/fundamentals/withdrawals.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../../developers/l1/dashboards.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="../../l2/fundamentals/based.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../../developers/l1/storage_api.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -431,11 +363,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../../l2/fundamentals/withdrawals.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../../developers/l1/dashboards.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="../../l2/fundamentals/based.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../../developers/l1/storage_api.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
