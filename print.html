@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1d18f029.js";
+            window.path_to_searchindex_js = "searchindex-249c4fe5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-7e7556e2.js"></script>
@@ -10701,7 +10701,7 @@ Block building options:
           Block extra data message.
           
           [env: ETHREX_BUILDER_EXTRA_DATA=]
-          [default: "ethrex 17.0.0"]
+          [default: "ethrex 18.0.0"]
 
       --builder.gas-limit &lt;GAS_LIMIT&gt;
           Target block gas limit.
@@ -10907,7 +10907,7 @@ Block building options:
           Block extra data message.
 
           [env: ETHREX_BUILDER_EXTRA_DATA=]
-          [default: "ethrex 17.0.0"]
+          [default: "ethrex 18.0.0"]
 
       --builder.gas-limit &lt;GAS_LIMIT&gt;
           Target block gas limit.
@@ -11226,7 +11226,7 @@ Prover client options:
 </ul>
 <h2 id="2nd---bump-version"><a class="header" href="#2nd---bump-version">2nd - Bump version</a></h2>
 <p>The version must be updated to <code>X.Y.Z</code> in the release branch. There are multiple <code>Cargo.toml</code> and <code>Cargo.lock</code> files that need to be updated.</p>
-<p>First, we need to update the version of the workspace package. You can find it in the <code>Cargo.toml</code> file in the root directory, under the <code>[workspace.package]</code> section.</p>
+<p>First, we need to update the version of the workspace package. You can find it in the <code>Cargo.toml</code> file in the root directory, under the <code>[workspace.package]</code> section. This is also the version the library crates are published under on crates.io when the release is finalized, so it must be a clean semver version (the <code>-rc.W</code> suffix lives only on the git tag).</p>
 <p>Then, we need to update five more <code>Cargo.toml</code> files that are not part of the workspace but fulfill the role of packages in the monorepo. These are located in the following paths:</p>
 <ul>
 <li><code>crates/guest-program/bin/sp1/Cargo.toml</code></li>
@@ -11283,6 +11283,17 @@ git push origin &lt;release_version&gt;
 </ul>
 <p>A changelog will be generated based on commit names (using conventional commits) from the last stable tag.</p>
 <h2 id="4th---test--publish-release"><a class="header" href="#4th---test--publish-release">4th - Test &amp; Publish Release</a></h2>
+<h3 id="testing-checklist"><a class="header" href="#testing-checklist">Testing checklist</a></h3>
+<p>Before publishing the release, run through the following checks using the pre-release binaries:</p>
+<ul>
+<li><input disabled="" type="checkbox"> Upgrade <code>ethrex-ethdocker-mainnet</code></li>
+<li><input disabled="" type="checkbox"> Upgrade <code>ethrex-mainnet-1</code></li>
+<li><input disabled="" type="checkbox"> Upgrade <code>ethrex-minimum-mainnet</code></li>
+<li><input disabled="" type="checkbox"> Launch multisync on <code>ethrex-multisync-main</code></li>
+<li><input disabled="" type="checkbox"> Upgrade a local L2 created with the previous version and run the integration tests</li>
+<li><input disabled="" type="checkbox"> Run the L2 integration tests with a SP1 prover on the GPU server (<code>l2-gpu</code>)</li>
+</ul>
+<h3 id="publish"><a class="header" href="#publish">Publish</a></h3>
 <p>Once the pre-release is created and you want to publish the release, go to the <a href="https://github.com/lambdaclass/ethrex/releases">release page</a> and follow the next steps:</p>
 <ol>
 <li>
@@ -11298,15 +11309,57 @@ git push origin &lt;release_version&gt;
 <p><img src="img/publish_release_step_3.png" alt="edit title"></p>
 </li>
 <li>
+<p>Customize the release notes.</p>
+<p>The auto-generated changelog lists every commit, but it doesn’t tell operators what actually matters in this release. Above the auto-generated changelog, add a hand-written summary using <a href="https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts">GitHub alerts</a>. Pick boxes by what the operator needs to decide, in this order:</p>
+<ul>
+<li><code>&gt; [!IMPORTANT]</code> — <strong>only</strong> when the release carries critical security or correctness fixes. One line stating that upgrading is strongly recommended for all operators.</li>
+<li><code>&gt; [!WARNING]</code> — <strong>only</strong> when the upgrade can’t be cleanly undone or carries a breaking change the operator must account for: a database schema migration you can’t roll back from, a required resync, removed or renamed CLI flags / config options, changed defaults, breaking RPC/API changes, or new minimum requirements (disk, dependency, consensus-client version). State what changes and what the operator must do.</li>
+<li><code>&gt; [!NOTE]</code> — <strong>always</strong>. A <strong>What’s new</strong> list of the highlights (new features, important fixes), plus a line saying whether a resync is needed (if not already covered above).</li>
+</ul>
+<p>Keep the space after <code>&gt;</code> (<code>&gt; [!NOTE]</code>, not <code>&gt;[!NOTE]</code>) and leave a blank line between boxes so each renders separately. Drop the <code>[!IMPORTANT]</code> / <code>[!WARNING]</code> boxes when they don’t apply — a routine release needs only the <code>[!NOTE]</code>.</p>
+<pre><code class="language-markdown">&gt; [!IMPORTANT]
+&gt; This release contains critical fixes. Upgrading is strongly recommended for all operators.
+
+&gt; [!WARNING]
+&gt; This release changes the database schema; once you upgrade you can't roll back to a previous version. The migration runs automatically.
+
+&gt; [!NOTE]
+&gt; **What's new**
+&gt; - &lt;highlight&gt;
+&gt; - &lt;highlight&gt;
+&gt;
+&gt; No resync is needed.
+</code></pre>
+</li>
+<li>
 <p>Set the release as the latest release (you will need to uncheck the pre-release first). And finally, click on <code>Update release</code></p>
 <p><img src="img/publish_release_step_4.png" alt="set latest release"></p>
 </li>
 </ol>
-<p>Once done, the CI will publish new tags for the already compiled docker images:</p>
+<blockquote class="blockquote-tag blockquote-tag-important">
+<p class="blockquote-tag-title"><svg viewbox="0 0 16 16" width="18" height="18"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"></path></svg>Important</p>
+<p>Do the tag rename (<code>vX.Y.Z-rc.W</code> → <code>vX.Y.Z</code>) <strong>and</strong> unchecking <em>pre-release</em> in a <strong>single</strong> <code>Update release</code> edit. The automatic promotion fires on that one edit because it both renames the tag and clears the pre-release flag; splitting it across two saves means neither edit carries both signals and the <code>latest</code> tag is not moved. If that happens, use the manual recovery in <a href="#failure-on-latest-release-workflow">Troubleshooting</a>.</p>
+</blockquote>
+<p>Once done, the <code>Ethrex Latest Release</code> workflow (triggered by that edit) will publish new tags for the already compiled docker images:</p>
 <ul>
 <li><code>ghcr.io/lambdaclass/ethrex:X.Y.Z</code>, <code>ghcr.io/lambdaclass/ethrex:latest</code></li>
 <li><code>ghcr.io/lambdaclass/ethrex:X.Y.Z-l2</code>, <code>ghcr.io/lambdaclass/ethrex:l2</code></li>
 </ul>
+<p>Promoting the pre-release to a full release also publishes ethrex’s library crates to crates.io — see the next section.</p>
+<h3 id="publishing-to-cratesio"><a class="header" href="#publishing-to-cratesio">Publishing to crates.io</a></h3>
+<p>Promoting the pre-release to a full release (the <code>released</code> event from the step above) triggers the <code>publish.yml</code> workflow, which runs <code>cargo publish</code> for ethrex’s publishable library crates in dependency order, at the workspace version <code>X.Y.Z</code>.</p>
+<blockquote class="blockquote-tag blockquote-tag-note">
+<p class="blockquote-tag-title"><svg viewbox="0 0 16 16" width="18" height="18"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"></path></svg>Note</p>
+<p>Only the <strong>final</strong> release publishes to crates.io. Pre-release (<code>vX.Y.Z-rc.W</code>) tags do <strong>not</strong>: the <code>released</code> event does not fire for pre-releases, and crates.io versions are immutable, so a release candidate must never claim the version before it has been tested.</p>
+</blockquote>
+<p>The crates are published at the <code>[workspace.package].version</code> bumped in step 2; the <code>-rc.W</code> suffix lives only on the git tag and never reaches crates.io.</p>
+<p>This requires a one-time organizational setup before the first release that publishes:</p>
+<ul>
+<li>A <code>CRATES_IO_TOKEN</code> repository secret with publish rights for the crates.</li>
+<li>A <code>crates-release-prod</code> GitHub environment (the workflow runs inside it).</li>
+<li>crates.io ownership of the crate names (the first publish under the token claims them).</li>
+</ul>
+<p>The workflow is idempotent: a crate version already on crates.io is skipped, so re-running after a partial failure is safe. To validate without publishing, run it manually from the Actions tab (the <code>workflow_dispatch</code> trigger) with the dry-run input checked — it lists each crate’s package contents instead of publishing.</p>
 <h2 id="5th---update-homebrew"><a class="header" href="#5th---update-homebrew">5th - Update Homebrew</a></h2>
 <p>Disclaimer: We should automate this</p>
 <ol>
@@ -11366,37 +11419,37 @@ xattr -dr com.apple.quarantine ethrex
 <p>If hotfixes are needed before the final release, commit them to <code>release/vX.Y.Z</code>, push, and create a new pre-release tag. The final tag <code>vX.Y.Z</code> should always point to the exact commit you will merge via PR.</p>
 <h2 id="troubleshooting-5"><a class="header" href="#troubleshooting-5">Troubleshooting</a></h2>
 <h3 id="failure-on-latest-release-workflow"><a class="header" href="#failure-on-latest-release-workflow">Failure on “latest release” workflow</a></h3>
-<p>If the CI fails when setting a release as latest (step 4), Docker tags <code>latest</code> and <code>l2</code> may not be updated. To manually push those changes, follow these steps:</p>
+<p>If the <code>latest</code> / <code>l2</code> Docker tags don’t get updated after step 5 (the <code>Ethrex Latest Release</code> run skipped the retag, or its <code>assert-latest-promoted</code> job failed), recover with the workflow’s manual path — no local Docker or PAT needed:</p>
+<ul>
+<li>Go to <strong>Actions → Ethrex Latest Release → Run workflow</strong>.</li>
+<li>Set <code>rc_tag</code> to the tested release candidate (e.g. <code>v18.0.0-rc.1</code>) and <code>version</code> to the final version (e.g. <code>v18.0.0</code>).</li>
+<li>Run it. The run retags <code>latest</code> / <code>l2</code> / <code>performance</code> / <code>X.Y.Z</code> from the RC image, publishes the apt package, and the <code>verify-latest</code> job confirms <code>:latest</code> resolves to <code>:X.Y.Z</code> (the run goes red if it doesn’t).</li>
+</ul>
+<p>If the registry itself is unreachable through Actions and you must promote by hand, do it <strong>server-side</strong> so the multi-arch image index is preserved. (A <code>docker pull --platform linux/amd64 … &amp;&amp; docker tag &amp;&amp; docker push</code> collapses <code>:latest</code> to a single architecture, silently dropping arm64.)</p>
 <ul>
 <li>Create a new Github Personal Access Token (PAT) from the <a href="https://github.com/settings/tokens/new">settings</a>.</li>
 <li>Check <code>write:packages</code> permission (this will auto-check <code>repo</code> permissions too), give a name and a short expiration time.</li>
 <li>Save the token securely.</li>
 <li>Click on <code>Configure SSO</code> button and authorize LambdaClass organization.</li>
 <li>Log in to Github Container Registry: <code>docker login ghcr.io</code>. Put your Github’s username and use the token as your password.</li>
-<li>Pull RC images:</li>
+<li>Retag the RC images to the release tags (server-side, multi-arch index preserved — same operation the workflow performs):</li>
 </ul>
-<pre><code class="language-bash">docker pull --platform linux/amd64 ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W
-docker pull --platform linux/amd64 ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W-l2
-</code></pre>
-<ul>
-<li>Retag them:</li>
-</ul>
-<pre><code class="language-bash">docker tag ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W ghcr.io/lambdaclass/ethrex:X.Y.Z
-docker tag ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W-l2 ghcr.io/lambdaclass/ethrex:X.Y.Z-l2
-docker tag ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W ghcr.io/lambdaclass/ethrex:latest
-docker tag ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W-l2 ghcr.io/lambdaclass/ethrex:l2
-</code></pre>
-<ul>
-<li>Push them:</li>
-</ul>
-<pre><code class="language-bash">docker push ghcr.io/lambdaclass/ethrex:X.Y.Z
-docker push ghcr.io/lambdaclass/ethrex:X.Y.Z-l2
-docker push ghcr.io/lambdaclass/ethrex:latest
-docker push ghcr.io/lambdaclass/ethrex:l2
+<pre><code class="language-bash">docker buildx imagetools create \
+  -t ghcr.io/lambdaclass/ethrex:X.Y.Z \
+  -t ghcr.io/lambdaclass/ethrex:latest \
+  -t ghcr.io/lambdaclass/ethrex:performance \
+  ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W
+docker buildx imagetools create \
+  -t ghcr.io/lambdaclass/ethrex:X.Y.Z-l2 \
+  -t ghcr.io/lambdaclass/ethrex:l2 \
+  -t ghcr.io/lambdaclass/ethrex:performance-l2 \
+  ghcr.io/lambdaclass/ethrex:X.Y.Z-rc.W-l2
 </code></pre>
 <ul>
 <li>Delete the PAT for security (<a href="https://github.com/settings/tokens">here</a>)</li>
 </ul>
+<h3 id="failure-on-the-cratesio-publish-workflow"><a class="header" href="#failure-on-the-cratesio-publish-workflow">Failure on the crates.io publish workflow</a></h3>
+<p>If <code>publish.yml</code> fails partway through, fix the cause and re-run the workflow. Crates already published at the release version are skipped (the run tolerates an “already exists” error), so it resumes from the first crate that has not been published yet. Because crates are published in dependency order, a metadata or ordering error in one crate blocks the crates that depend on it, while the ones published before it stay published (crates.io versions cannot be unpublished or overwritten — a fix requires a new version).</p>
 <div style="break-before: page; page-break-before: always;"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
 <h1 id="short-to-mid-term-roadmap"><a class="header" href="#short-to-mid-term-roadmap">Short– to Mid-Term Roadmap</a></h1>
 <p>This document represents the <strong>short- to mid-term roadmap</strong>.
